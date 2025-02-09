@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vote Now</title>
+</head>
+<body>
+    <h2>Cast Your Vote</h2>
+    <form action="/vote" method="post">
+        <input type="text" name="voter_id" placeholder="Your Voter ID" required>
+        <input type="text" name="voter_name" placeholder="Your Name" required>
+        <input type="radio" name="candidate" value="Candidate 1"> Candidate 1
+        <input type="radio" name="candidate" value="Candidate 2"> Candidate 2
+        <button type="submit">Vote</button>
+    </form>
+</body>
+</html>
