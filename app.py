@@ -1,83 +1,65 @@
-from flask import Flask, render_template, request, session
-import sqlite3
+from flask import Flask, render_template, request
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import os
 import datetime
 
 app = Flask(__name__)
+app.secret_key = "secret_key_here"
 
-# Secure Secret Key for Sessions
-app.secret_key = os.getenv("SECRET_KEY", "SuperSecretKey123")  
-
-# Voting deadline (Change if needed)
+# Voting deadline (Set your desired date & time)
 VOTING_DEADLINE = datetime.datetime(2025, 2, 15, 18, 0, 0)
 
-# Initialize Database
-def init_db():
-    conn = sqlite3.connect("voting.db")
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS votes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            voter_id TEXT UNIQUE,
-            voter_name TEXT,
-            voter_ip TEXT UNIQUE,
-            candidate TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+# Database Setup (Using SQLite)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///voting.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-init_db()
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
-# Home Route
+# Database Model
+class Vote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    voter_id = db.Column(db.String(100), unique=True, nullable=False)  # Unique voter ID
+    voter_ip = db.Column(db.String(100), unique=True, nullable=False)  # Unique IP
+    candidate = db.Column(db.String(100), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+# Home Route (Voting Page)
 @app.route("/")
 def home():
     if datetime.datetime.now() > VOTING_DEADLINE:
         return "Voting has ended!"
     return render_template("vote.html")
 
-# Handle Voting
+# Handle Vote Submission
 @app.route("/vote", methods=["POST"])
 def vote():
     if datetime.datetime.now() > VOTING_DEADLINE:
         return "Voting has ended!"
     
-    voter_id = request.form.get("voter_id")
-    voter_name = request.form.get("voter_name")
-    candidate = request.form.get("candidate")
-    voter_ip = request.remote_addr  
-
-    if not voter_id or not candidate or not voter_name:
+    voter_id = request.form.get("voter_id")  # Unique voter ID (user input)
+    voter_ip = request.remote_addr  # Get voter IP
+    candidate = request.form.get("candidate")  # Use .get() to avoid KeyError
+    
+    if not candidate or not voter_id:
         return "Invalid vote submission!"
     
-    conn = sqlite3.connect("voting.db")
-    c = conn.cursor()
-    
-    try:
-        c.execute("INSERT INTO votes (voter_id, voter_name, voter_ip, candidate) VALUES (?, ?, ?, ?)",
-                  (voter_id, voter_name, voter_ip, candidate))
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
+    existing_vote = Vote.query.filter((Vote.voter_id == voter_id) | (Vote.voter_ip == voter_ip)).first()
+    if existing_vote:
         return "You have already voted!"
     
-    conn.close()
+    new_vote = Vote(voter_id=voter_id, voter_ip=voter_ip, candidate=candidate)
+    db.session.add(new_vote)
+    db.session.commit()
+    
     return "Thank you for voting!"
 
-# Secure Results Page (Admin Only)
+# Show Results
 @app.route("/results")
 def results():
-    admin_pass = request.args.get("password")
-    if admin_pass != os.getenv("ADMIN_PASSWORD", "Admin123"):  
-        return "Unauthorized Access!"
-    
-    conn = sqlite3.connect("voting.db")
-    c = conn.cursor()
-    c.execute("SELECT candidate, COUNT(*) FROM votes GROUP BY candidate")
-    results = c.fetchall()
-    conn.close()
-    return render_template("results.html", results=results)
+    votes = db.session.query(Vote.candidate, db.func.count(Vote.id)).group_by(Vote.candidate).all()
+    return render_template("results.html", results=votes)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(debug=True)
