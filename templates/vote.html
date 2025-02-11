@@ -1,26 +1,14 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vote Now</title>
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-
-    <div class="container">
-        <h1>🗳️ Cast Your Vote</h1>
-        <p>Select your preferred candidate and submit your vote.</p>
-        
-        <form action="{{ url_for('vote') }}" method="POST">
-            {% for candidate in candidates %}
-                <input type="radio" name="candidate_id" value="{{ candidate.id }}" required> 
-                <label>{{ candidate.name }}</label><br>
-            {% endfor %}
-            
-            <button type="submit">Submit Vote ✅</button>
-        </form>
-    </div>
-
-</body>
-</html>
+{% if voting_closed %}
+    <h2>Voting is closed. You cannot vote at this time.</h2>
+{% else %}
+    <h1>Cast Your Vote</h1>
+    <form action="{{ url_for('vote') }}" method="POST">
+        {% for candidate in candidates %}
+            <input type="radio" name="candidate" value="{{ candidate.id }}" required> 
+            <label>{{ candidate.name }}</label><br>
+        {% endfor %}
+        <br>
+        <button type="submit">Submit Vote</button>
+    </form>
+{% endif %}
+<a href="{{ url_for('results') }}">View Results</a>

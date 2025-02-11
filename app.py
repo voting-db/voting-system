@@ -1,65 +1,56 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-import os
-import datetime
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = "secret_key_here"
-
-# Voting deadline (Set your desired date & time)
-VOTING_DEADLINE = datetime.datetime(2025, 2, 15, 18, 0, 0)
-
-# Database Setup (Using SQLite)
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///voting.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///votes.db'
 db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 
-# Database Model
-class Vote(db.Model):
+# Candidate Model
+class Candidate(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    voter_id = db.Column(db.String(100), unique=True, nullable=False)  # Unique voter ID
-    voter_ip = db.Column(db.String(100), unique=True, nullable=False)  # Unique IP
-    candidate = db.Column(db.String(100), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    name = db.Column(db.String(100), nullable=False)
+    votes = db.Column(db.Integer, default=0)
 
-# Home Route (Voting Page)
-@app.route("/")
+# Election Settings (Start & End Time)
+class ElectionSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    start_time = db.Column(db.DateTime, nullable=False)
+    end_time = db.Column(db.DateTime, nullable=False)
+
+# Create Database
+with app.app_context():
+    db.create_all()
+
+@app.route('/')
 def home():
-    if datetime.datetime.now() > VOTING_DEADLINE:
-        return "Voting has ended!"
-    return render_template("vote.html")
+    return redirect(url_for('vote'))
 
-# Handle Vote Submission
-@app.route("/vote", methods=["POST"])
+@app.route('/vote', methods=['GET', 'POST'])
 def vote():
-    if datetime.datetime.now() > VOTING_DEADLINE:
-        return "Voting has ended!"
-    
-    voter_id = request.form.get("voter_id")  # Unique voter ID (user input)
-    voter_ip = request.remote_addr  # Get voter IP
-    candidate = request.form.get("candidate")  # Use .get() to avoid KeyError
-    
-    if not candidate or not voter_id:
-        return "Invalid vote submission!"
-    
-    existing_vote = Vote.query.filter((Vote.voter_id == voter_id) | (Vote.voter_ip == voter_ip)).first()
-    if existing_vote:
-        return "You have already voted!"
-    
-    new_vote = Vote(voter_id=voter_id, voter_ip=voter_ip, candidate=candidate)
-    db.session.add(new_vote)
-    db.session.commit()
-    
-    return "Thank you for voting!"
+    candidates = Candidate.query.all()
+    settings = ElectionSettings.query.first()
+    current_time = datetime.now()
 
-# Show Results
-@app.route("/results")
+    # Check if voting is allowed
+    if settings and (current_time < settings.start_time or current_time > settings.end_time):
+        return render_template('vote.html', candidates=None, voting_closed=True)
+
+    if request.method == 'POST':
+        candidate_id = request.form.get('candidate')
+        if candidate_id:
+            selected_candidate = Candidate.query.get(candidate_id)
+            if selected_candidate:
+                selected_candidate.votes += 1
+                db.session.commit()
+                return redirect(url_for('results'))
+    
+    return render_template('vote.html', candidates=candidates, voting_closed=False)
+
+@app.route('/results')
 def results():
-    votes = db.session.query(Vote.candidate, db.func.count(Vote.id)).group_by(Vote.candidate).all()
-    return render_template("results.html", results=votes)
+    candidates = Candidate.query.order_by(Candidate.votes.desc()).all()
+    return render_template('results.html', candidates=candidates)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
